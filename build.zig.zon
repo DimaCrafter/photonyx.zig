@@ -1,0 +1,20 @@
+.{
+    .name = .photonyx,
+    .version = "0.1.0",
+
+    // When forking a Zig project, this id should be regenerated (delete the
+    // field and run `zig build`) if the upstream project is still maintained.
+    // Otherwise, the fork is *hostile*, attempting to take control over the
+    // original project's identity.
+    .fingerprint = 0x5f48d354fe2c05f,
+
+    .minimum_zig_version = "0.14.1",
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "license",
+        "readme.md",
+    },
+}
