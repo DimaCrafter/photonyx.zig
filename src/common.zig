@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
 
-extern fn rs_alloc(size: usize, alignment: usize) callconv(.C) ?[*]u8;
-extern fn rs_realloc(ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) callconv(.C) ?[*]u8;
-extern fn rs_dealloc(ptr: [*]u8, size: usize, alignment: usize) callconv(.C) void;
+extern "C" fn rs_alloc(size: usize, alignment: usize) callconv(.C) ?[*]u8;
+extern "C" fn rs_realloc(ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) callconv(.C) ?[*]u8;
+extern "C" fn rs_dealloc(ptr: [*]u8, size: usize, alignment: usize) callconv(.C) void;
 
 const RAllocator = struct {
     const vtable: Allocator.VTable = .{
@@ -37,8 +37,19 @@ pub const ra: Allocator = .{
 };
 
 pub const c_str = [*:0]const u8;
-extern fn str_drop(ptr: c_str) callconv(.C) void;
+extern "C" fn str_drop(ptr: c_str) callconv(.C) void;
 
-pub inline fn str_deinit(str: c_str) void {
+pub inline fn strDeinit(str: c_str) void {
     str_drop(str);
+}
+
+pub fn Slice(comptime T: type) type {
+    return extern struct {
+        ptr: [*]const T,
+        len: usize,
+
+        pub fn intoNative(self: @This()) []const T {
+            return self.ptr[0..self.len];
+        }
+    };
 }

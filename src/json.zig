@@ -4,8 +4,22 @@ const Type = std.builtin.Type;
 const common = @import("./common.zig");
 const c_str = common.c_str;
 
+extern "C" fn json_new_object() callconv(.C) *Json;
+extern "C" fn json_set(obj: *Json, key: c_str, value: *Json) callconv(.C) bool;
+extern "C" fn json_dump(value: *const Json) callconv(.C) c_str;
+extern "C" fn json_dump_pretty(value: *const Json, ident: u16) callconv(.C) c_str;
+
+extern "C" fn json_new_array() callconv(.C) *Json;
+extern "C" fn json_push(list: *Json, value: *Json) callconv(.C) bool;
+
+extern "C" fn json_new_null() callconv(.C) *Json;
+extern "C" fn json_new_number(value: f64) callconv(.C) *Json;
+extern "C" fn json_new_bool(value: bool) callconv(.C) *Json;
+extern "C" fn json_new_str(value: c_str) callconv(.C) *Json;
+extern "C" fn json_drop(value: *Json) callconv(.C) void;
+
 pub const Json = opaque {
-    pub inline fn new_object() *Json {
+    pub inline fn init_object() *Json {
         return json_new_object();
     }
 
@@ -21,7 +35,7 @@ pub const Json = opaque {
         return json_dump_pretty(self, ident);
     }
 
-    pub fn new_array() *Json {
+    pub fn init_array() *Json {
         return json_new_array();
     }
 
@@ -29,19 +43,19 @@ pub const Json = opaque {
         return json_push(self, value);
     }
 
-    pub fn new_null() *Json {
+    pub fn init_null() *Json {
         return json_new_null();
     }
 
-    pub fn new_number(value: f64) *Json {
+    pub fn init_number(value: f64) *Json {
         return json_new_number(value);
     }
 
-    pub fn new_bool(value: bool) *Json {
+    pub fn init_bool(value: bool) *Json {
         return json_new_bool(value);
     }
 
-    pub fn new_str(value: c_str) *Json {
+    pub fn init_str(value: c_str) *Json {
         return json_new_str(value);
     }
 
@@ -54,24 +68,24 @@ pub const Json = opaque {
         const info = @typeInfo(T);
         switch (info) {
             .bool => {
-                return new_bool(value);
+                return init_bool(value);
             },
             .int, .comptime_int => {
-                return new_number(@as(f64, @floatFromInt(value)));
+                return init_number(@as(f64, @floatFromInt(value)));
             },
             .float, .comptime_float => {
-                return new_number(@as(f64, @floatCast(value)));
+                return init_number(@as(f64, @floatCast(value)));
             },
             .@"struct" => |structInfo| {
                 if (structInfo.is_tuple) {
-                    var list = new_array();
+                    var list = init_array();
                     inline for (structInfo.fields) |field| {
                         _ = list.push(from(@field(value, field.name)));
                     }
 
                     return list;
                 } else {
-                    var obj = new_object();
+                    var obj = init_object();
                     inline for (structInfo.fields) |field| {
                         _ = obj.set(field.name, from(@field(value, field.name)));
                     }
@@ -81,10 +95,10 @@ pub const Json = opaque {
             },
             .array => |arrayInfo| {
                 if (arrayInfo.sentinel().? == 0 and arrayInfo.child == u8) {
-                    return new_str(&value);
+                    return init_str(&value);
                 }
 
-                var list = new_array();
+                var list = init_array();
                 inline for (0..arrayInfo.len) |i| {
                     _ = list.push(from(value[i]));
                 }
@@ -94,12 +108,20 @@ pub const Json = opaque {
             .pointer => |ptrInfo| {
                 if (ptrInfo.size == .one) {
                     return from(value.*);
+                } else if (ptrInfo.size == .slice) {
+                    if (ptrInfo.sentinel().? == 0 and ptrInfo.child == u8) {
+                        return init_str(value);
+                    }
                 }
+                // @compileLog(value, ptrInfo);
                 @compileError("Unable to interpret pointer " ++ @typeName(T) ++ "' as a JSON value");
+            },
+            .@"enum" => {
+                return from(@tagName(value));
             },
             else => {
                 if (value == null) {
-                    return new_null();
+                    return init_null();
                 } else {
                     @compileError("Unable to interpret '" ++ @typeName(T) ++ "' as a JSON value");
                 }
@@ -107,17 +129,3 @@ pub const Json = opaque {
         }
     }
 };
-
-extern "C" fn json_new_object() callconv(.C) *Json;
-extern "C" fn json_set(obj: *Json, key: c_str, value: *Json) callconv(.C) bool;
-extern "C" fn json_dump(value: *const Json) callconv(.C) c_str;
-extern "C" fn json_dump_pretty(value: *const Json, ident: u16) callconv(.C) c_str;
-
-extern "C" fn json_new_array() callconv(.C) *Json;
-extern "C" fn json_push(list: *Json, value: *Json) callconv(.C) bool;
-
-extern "C" fn json_new_null() callconv(.C) *Json;
-extern "C" fn json_new_number(value: f64) callconv(.C) *Json;
-extern "C" fn json_new_bool(value: bool) callconv(.C) *Json;
-extern "C" fn json_new_str(value: c_str) callconv(.C) *Json;
-extern "C" fn json_drop(value: *Json) callconv(.C) void;
