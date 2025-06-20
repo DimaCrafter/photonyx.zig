@@ -21,7 +21,10 @@ pub const HttpContext = opaque {
 
         switch (V.validateRawJson(raw, .{})) {
             .err => |err| {
-                self.jsonStatus(HttpCode.BadRequest, err.intoJson());
+                const json = err.intoJson();
+                defer json.deinit();
+
+                self.send(.{ .code = HttpCode.BadRequest, .json = json });
                 return error.ValidationError;
             },
             .ok => |parsed| {
@@ -35,26 +38,19 @@ pub const HttpContext = opaque {
         res.headers().set(name, value);
     }
 
-    /// resSchema.code: HttpCode
-    /// resSchema.json: *Json or anytype
-    /// resSchema.raw: []const u8
+    /// - resSchema.code: `HttpCode`
+    /// - resSchema.json: `*Json` or `anytype`
+    /// - resSchema.raw: `[]const u8`
     pub fn send(self: *HttpContext, resSchema: anytype) void {
         const S = @TypeOf(resSchema);
         const res = http_context_get_response(self);
 
         if (@hasField(S, "json")) {
-            const jsonLike = @field(resSchema, "json");
+            const json = Json.from_or_ref(@field(resSchema, "json"));
+            defer json.deinit();
 
-            if (@TypeOf(jsonLike) == *Json) {
-                const msg = jsonLike.dump();
-                res.setPayload(msg[0..std.mem.len(msg)]);
-            } else {
-                const json = Json.from(jsonLike);
-                defer json.deinit();
-
-                const msg = json.dump();
-                res.setPayload(msg[0..std.mem.len(msg)]);
-            }
+            const msg = json.borrow().dump();
+            res.setPayload(msg[0..std.mem.len(msg)]);
         }
 
         if (@hasField(S, "raw")) {
@@ -111,6 +107,8 @@ pub const Response = opaque {
         response_set_drop(self);
     }
 
+    /// Set raw response body. Passed slice must be allocated with `p.ra`,
+    /// and it will be `deinit`ed by Photonyx.
     pub inline fn setPayload(self: *Response, r_payload: []const u8) void {
         response_set_payload(self, r_payload.ptr, r_payload.len);
     }
