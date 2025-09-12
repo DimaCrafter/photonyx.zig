@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
 
-extern "C" fn rs_alloc(size: usize, alignment: usize) callconv(.C) ?[*]u8;
-extern "C" fn rs_realloc(ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) callconv(.C) ?[*]u8;
-extern "C" fn rs_dealloc(ptr: [*]u8, size: usize, alignment: usize) callconv(.C) void;
+extern "C" fn rs_alloc(size: usize, alignment: usize) callconv(.c) ?[*]u8;
+extern "C" fn rs_realloc(ptr: [*]u8, old_size: usize, new_size: usize, alignment: usize) callconv(.c) ?[*]u8;
+extern "C" fn rs_dealloc(ptr: [*]u8, size: usize, alignment: usize) callconv(.c) void;
 
 const RAllocator = struct {
     const vtable: Allocator.VTable = .{
@@ -37,7 +37,7 @@ pub const ra: Allocator = .{
 };
 
 pub const c_str = [*:0]const u8;
-extern "C" fn str_drop(ptr: c_str) callconv(.C) void;
+extern "C" fn str_drop(ptr: c_str) callconv(.c) void;
 
 pub inline fn strDeinit(str: c_str) void {
     str_drop(str);
@@ -79,8 +79,8 @@ pub const AnyEntityList = opaque {
     }
 };
 
-extern "C" fn entity_list_get_items(vec: *AnyEntityList) callconv(.C) AnySlice;
-extern "C" fn entity_list_deinit(vec: *AnyEntityList) callconv(.C) void;
+extern "C" fn entity_list_get_items(vec: *AnyEntityList) callconv(.c) AnySlice;
+extern "C" fn entity_list_deinit(vec: *AnyEntityList) callconv(.c) void;
 
 pub fn EntityList(comptime T: type) type {
     return opaque {
@@ -102,7 +102,7 @@ pub fn EntityList(comptime T: type) type {
 
 /// Provides unified instance management, so you can `move` or `deinit` it unconditionally.
 /// If inner value is owned by Zig, it will be `deinit`ed automatically.
-/// If inner value is borrowed (referenced) it will be `deinit`ed by the owner.
+/// If inner value is borrowed (referenced) it will be `deinit`ed by the owner later.
 pub fn Shared(comptime T: type) type {
     return extern struct {
         const Self = @This();
@@ -118,7 +118,7 @@ pub fn Shared(comptime T: type) type {
         }
 
         /// Make owned value be managed by a receiver.
-        /// After this stored value becomes borrowed for the caller.
+        /// After this, stored value becomes borrowed for the caller.
         pub fn move(self: *Self) T {
             self.owned = false;
             return self.value;

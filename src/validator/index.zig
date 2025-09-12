@@ -69,7 +69,7 @@ pub fn Validator(comptime Schema: type) type {
 
         pub fn validateRawJson(raw: []const u8, options: std.json.ParseOptions) ValidationResult(std.json.Parsed(T)) {
             const parsed = std.json.parseFromSlice(T, common.ra, raw, options) catch |err| {
-                if (std.fmt.allocPrintZ(common.ra, "Failed to parse JSON: {}", .{err})) |message| {
+                if (std.fmt.allocPrintSentinel(common.ra, "Failed to parse JSON: {}", .{err}, 0)) |message| {
                     // string will be copied in ValidationError.init
                     // todo? owning in zig to allow passing values without copying?
                     defer common.ra.free(message);

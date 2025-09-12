@@ -6,10 +6,13 @@ const Slice = common.Slice;
 
 const HttpCode = @import("./codes.zig").HttpCode;
 const Json = @import("./json.zig").Json;
+const Session = @import("./session.zig").Session;
 
-extern "C" fn http_context_set_response(ctx: *HttpContext, res: *Response) callconv(.C) void;
-extern "C" fn http_context_get_body_ref(ctx: *const HttpContext) callconv(.C) Slice(u8);
-extern "C" fn http_context_get_response(ctx: *HttpContext) callconv(.C) *Response;
+extern "C" fn http_context_set_response(ctx: *HttpContext, res: *Response) callconv(.c) void;
+extern "C" fn http_context_get_body_ref(ctx: *const HttpContext) callconv(.c) Slice(u8);
+extern "C" fn http_context_get_request(ctx: *HttpContext) callconv(.c) *Request;
+extern "C" fn http_context_get_response(ctx: *HttpContext) callconv(.c) *Response;
+extern "C" fn http_context_get_session(ctx: *HttpContext) callconv(.c) *Session;
 
 pub const HttpContext = opaque {
     pub inline fn getBodyRef(self: *const HttpContext) []const u8 {
@@ -33,9 +36,18 @@ pub const HttpContext = opaque {
         }
     }
 
+    pub inline fn getHeader(self: *HttpContext, name: []const u8) ?[]const u8 {
+        const req = http_context_get_request(self);
+        return req.headers().get(name);
+    }
+
     pub inline fn setHeader(self: *HttpContext, name: c_str, value: c_str) void {
         const res = http_context_get_response(self);
         res.headers().set(name, value);
+    }
+
+    pub inline fn session(self: *HttpContext) *Session {
+        return http_context_get_session(self);
     }
 
     /// - resSchema.code: `HttpCode`
@@ -65,11 +77,20 @@ pub const HttpContext = opaque {
     }
 };
 
-extern "C" fn http_headers_set(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.C) void;
-extern "C" fn http_headers_set_default(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.C) void;
-extern "C" fn http_headers_set_normal(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.C) void;
+extern "C" fn http_headers_get(headers: *const HttpHeaders, name: *const []const u8) callconv(.c) ?*const []const u8;
+extern "C" fn http_headers_set(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.c) void;
+extern "C" fn http_headers_set_default(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.c) void;
+extern "C" fn http_headers_set_normal(headers: *HttpHeaders, name: c_str, value: c_str) callconv(.c) void;
 
 pub const HttpHeaders = opaque {
+    pub inline fn get(self: *const HttpHeaders, name: []const u8) ?[]const u8 {
+        if (http_headers_get(self, &name)) |value| {
+            return value.*;
+        } else {
+            return null;
+        }
+    }
+
     pub inline fn set(self: *HttpHeaders, name: c_str, value: c_str) void {
         http_headers_set(self, name, value);
     }
@@ -83,12 +104,12 @@ pub const HttpHeaders = opaque {
     }
 };
 
-extern "C" fn response_new() callconv(.C) *Response;
-extern "C" fn response_set_code(res: *Response, code: HttpCode) callconv(.C) void;
-extern "C" fn response_headers(res: *Response) callconv(.C) *HttpHeaders;
-extern "C" fn response_set_drop(res: *Response) callconv(.C) void;
-extern "C" fn response_set_payload(res: *Response, r_ptr: [*]const u8, size: usize) callconv(.C) void;
-extern "C" fn response_drop(res: *Response) callconv(.C) void;
+extern "C" fn response_new() callconv(.c) *Response;
+extern "C" fn response_set_code(res: *Response, code: HttpCode) callconv(.c) void;
+extern "C" fn response_headers(res: *Response) callconv(.c) *HttpHeaders;
+extern "C" fn response_set_drop(res: *Response) callconv(.c) void;
+extern "C" fn response_set_payload(res: *Response, r_ptr: [*]const u8, size: usize) callconv(.c) void;
+extern "C" fn response_drop(res: *Response) callconv(.c) void;
 
 pub const Response = opaque {
     pub inline fn init() *Response {
@@ -115,5 +136,13 @@ pub const Response = opaque {
 
     pub inline fn deinit(self: *Response) void {
         response_drop(self);
+    }
+};
+
+extern "C" fn request_headers(res: *const Request) callconv(.c) *const HttpHeaders;
+
+pub const Request = opaque {
+    pub inline fn headers(self: *const Request) *const HttpHeaders {
+        return request_headers(self);
     }
 };

@@ -5,23 +5,50 @@ const common = @import("./common.zig");
 const c_str = common.c_str;
 const Shared = common.Shared;
 
-extern "C" fn json_new_object() callconv(.C) *Json;
-extern "C" fn json_set(obj: *Json, key: c_str, value: *Json) callconv(.C) bool;
-extern "C" fn json_dump(value: *const Json) callconv(.C) c_str;
-extern "C" fn json_dump_pretty(value: *const Json, ident: u16) callconv(.C) c_str;
+extern "C" fn json_get(obj: *Json, key: c_str) callconv(.c) *Json;
+extern "C" fn json_as_str(obj: *const Json) callconv(.c) ?c_str;
 
-extern "C" fn json_new_array() callconv(.C) *Json;
-extern "C" fn json_push(list: *Json, value: *Json) callconv(.C) bool;
+extern "C" fn json_new_object() callconv(.c) *Json;
+extern "C" fn json_set(obj: *Json, key: c_str, value: *Json) callconv(.c) bool;
+extern "C" fn json_dump(value: *const Json) callconv(.c) c_str;
+extern "C" fn json_dump_pretty(value: *const Json, ident: u16) callconv(.c) c_str;
 
-extern "C" fn json_new_null() callconv(.C) *Json;
-extern "C" fn json_new_number(value: f64) callconv(.C) *Json;
-extern "C" fn json_new_bool(value: bool) callconv(.C) *Json;
-extern "C" fn json_new_str(value: c_str) callconv(.C) *Json;
-extern "C" fn json_drop(value: *Json) callconv(.C) void;
+extern "C" fn json_new_array() callconv(.c) *Json;
+extern "C" fn json_push(list: *Json, value: *Json) callconv(.c) bool;
+
+extern "C" fn json_new_null() callconv(.c) *Json;
+extern "C" fn json_new_number(value: f64) callconv(.c) *Json;
+extern "C" fn json_new_bool(value: bool) callconv(.c) *Json;
+extern "C" fn json_new_str(value: c_str) callconv(.c) *Json;
+extern "C" fn json_drop(value: *Json) callconv(.c) void;
 
 pub const Json = opaque {
     pub inline fn init_object() *Json {
         return json_new_object();
+    }
+
+    pub inline fn get(self: *Json, key: c_str) *Json {
+        return json_get(self, key);
+    }
+
+    pub inline fn as_str(self: *const Json) ?c_str {
+        return json_as_str(self);
+    }
+
+    pub inline fn as_enum(self: *const Json, comptime E: type) !E {
+        const options = @typeInfo(E).@"enum".fields;
+
+        const value = self.as_str() orelse {
+            return error.InvalidType;
+        };
+
+        inline for (options) |option| {
+            if (std.mem.eql(u8, option.name, value[0..std.mem.len(value)])) {
+                return @field(E, option.name);
+            }
+        }
+
+        return error.InvalidEnumString;
     }
 
     /// Set value for object key. Passed `value` will be managed by the object.
@@ -120,6 +147,16 @@ pub const Json = opaque {
                     if (ptrInfo.sentinel()) |sentinel| {
                         if (sentinel == 0 and ptrInfo.child == u8) {
                             return init_str(value);
+                        }
+                    } else {
+                        if (ptrInfo.child == u8) {
+                            const tmp = common.ra.dupeZ(u8, value) catch {
+                                // todo! remove this when c_str will be replaced with slice
+                                return init_null();
+                            };
+                            defer common.ra.free(tmp);
+
+                            return init_str(tmp);
                         }
                     }
                 }

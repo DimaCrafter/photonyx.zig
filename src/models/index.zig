@@ -2,64 +2,18 @@ const std = @import("std");
 const meta = @import("../meta.zig");
 const Json = @import("../json.zig").Json;
 const DatabaseConnection = @import("connection.zig").DatabaseConnection;
-const ModelMeta = @import("meta.zig").ModelMeta;
 const QueryBuilder = @import("query.zig").QueryBuilder;
+
+const model_meta_zig = @import("meta.zig");
+const ModelMeta = model_meta_zig.ModelMeta;
+pub const Self = model_meta_zig.Self;
+pub const Link = model_meta_zig.Link;
+pub const sql = model_meta_zig.sql;
 
 const common = @import("../common.zig");
 const c_str = common.c_str;
 const Slice = common.Slice;
 const AnySlice = common.AnySlice;
-
-pub const sql = @import("sql/index.zig");
-
-pub const StringArgs = struct {
-    length: u32 = 0,
-    optional: bool = false,
-    default: ?[]const u8 = null,
-};
-
-/// Type for variable length string
-pub fn String(comptime options: StringArgs) type {
-    return struct { stringT: []u8, args: StringArgs = options };
-}
-
-pub const CharArgs = struct {
-    length: u32,
-    optional: bool = false,
-    default: ?[]const u8 = null,
-};
-
-/// Type for fixed length string
-pub fn Char(comptime options: CharArgs) type {
-    const length: comptime_int = @field(options, "length");
-    return struct { charT: [length]u8, args: CharArgs = options };
-}
-
-pub const LinkArgs = struct {
-    Destination: type,
-};
-
-pub const LinkPolicy = enum {
-    /// Link will be used just as key
-    none,
-    /// Service.user_id --> User: operation on User will be restricted if Service exist
-    restrict,
-    /// Service.user_id --> User: operation on User will cause some operation on Service
-    cascade,
-    /// Service.user_id --> User: operation on User will set Service.user_id to null
-    set_null,
-};
-
-pub const Link = struct {
-    model: type,
-    delete: LinkPolicy = .none,
-    update: LinkPolicy = .none,
-};
-
-pub const DateTimeArgs = struct {
-    optional: bool = false,
-    default: ?[]const u8 = null,
-};
 
 pub const DateTime = u64;
 pub const CURRENT_DATE = 0;
@@ -75,7 +29,7 @@ pub fn Model(comptime _T: type, constraints: anytype) type {
         var _conn: ?*DatabaseConnection = null;
         var _meta: ?*ModelMeta = null;
 
-        fn initEntity() callconv(.C) ?*T {
+        pub fn initEntity() callconv(.c) ?*T {
             if (common.ra.create(T)) |ptr| {
                 return ptr;
             } else |_| {
@@ -83,7 +37,7 @@ pub fn Model(comptime _T: type, constraints: anytype) type {
             }
         }
 
-        pub fn deinitEntity(ptr: *T) callconv(.C) void {
+        pub fn deinitEntity(ptr: *T) callconv(.c) void {
             inline for (@typeInfo(T).@"struct".fields) |field| {
                 const F = @FieldType(T, field.name);
                 switch (F) {
@@ -113,8 +67,15 @@ pub fn Model(comptime _T: type, constraints: anytype) type {
 
             if (DatabaseConnection.find(constraints._connId)) |conn| {
                 const model_meta = conn.prepareModel(T, _name ++ "\x00", initEntity, deinitEntity);
-                model_meta.addFieldsFrom(T);
+                model_meta.addFieldsFrom(@This());
 
+                if (@hasField(@TypeOf(constraints._chained), "$unique")) {
+                    inline for (constraints._chained.@"$unique") |key| {
+                        model_meta.addUniqueKey(&key);
+                    }
+                }
+
+                conn.autoMigrate(model_meta);
                 _conn = conn;
                 _meta = model_meta;
             } else {
@@ -124,6 +85,27 @@ pub fn Model(comptime _T: type, constraints: anytype) type {
                 );
                 std.process.exit(0xFE);
             }
+        }
+
+        pub fn _getConstraints() if (@hasField(@TypeOf(constraints), "_chained")) @TypeOf(constraints._chained) else @TypeOf(constraints) {
+            if (@hasField(@TypeOf(constraints), "_chained")) {
+                return constraints._chained;
+            } else {
+                return constraints;
+            }
+        }
+
+        pub fn _findPrimaryKey() ?[:0]const u8 {
+            const fields_constraints = _getConstraints();
+            inline for (@typeInfo(@TypeOf(fields_constraints)).@"struct".fields) |field| {
+                inline for (@field(fields_constraints, field.name)) |constraint| {
+                    if (constraint == sql.PrimaryKey) {
+                        return field.name;
+                    }
+                }
+            }
+
+            return null;
         }
 
         fn getConnection() ModelAttr {
@@ -156,7 +138,7 @@ pub fn Model(comptime _T: type, constraints: anytype) type {
     };
 }
 
-pub fn boundModel(comptime M: type, connId: c_str) type {
+pub inline fn boundModel(comptime M: type, connId: c_str) type {
     return Model(M.T, .{ ._chained = M._constraints, ._connId = connId });
 }
 

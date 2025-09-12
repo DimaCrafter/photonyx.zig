@@ -5,32 +5,42 @@ const common = @import("../common.zig");
 const c_str = common.c_str;
 const Slice = common.Slice;
 
-extern "C" fn model_meta_add_field(model: *ModelMeta, name: c_str, _meta: ModelFieldMeta, setter: entity.SetterFn) callconv(.C) void;
+extern "C" fn model_meta_add_field(model: *ModelMeta, name: c_str, setter: entity.SetterFn) callconv(.c) *ModelFieldMeta;
+extern "C" fn model_meta_add_unique_key(model: *ModelMeta, compound: *const []const []const u8) callconv(.c) void;
 
 pub const ModelMeta = opaque {
-    pub inline fn addField(self: *ModelMeta, name: c_str, _meta: ModelFieldMeta, setter: entity.SetterFn) void {
-        model_meta_add_field(self, name, _meta, setter);
+    pub inline fn addField(self: *ModelMeta, name: c_str, setter: entity.SetterFn) *ModelFieldMeta {
+        return model_meta_add_field(self, name, setter);
     }
 
-    pub fn addFieldsFrom(self: *ModelMeta, comptime T: type) void {
-        inline for (@typeInfo(T).@"struct".fields) |field| {
+    pub fn addFieldsFrom(self: *ModelMeta, comptime M: type) void {
+        inline for (@typeInfo(M.T).@"struct".fields) |field| {
             const holder = struct {
-                pub fn setField(instance: *T, value_opt: ?*anyopaque) callconv(.C) void {
+                pub fn setField(instance: *M.T, value_opt: ?*anyopaque) callconv(.c) void {
                     if (value_opt) |value| {
-                        copyValue(T, instance, field.name, value) catch {
+                        copyValue(M.T, instance, field.name, value) catch {
                             // todo! handle it somehow
                             return;
                         };
                     } else {
-                        setDefaultValue(T, instance, field.name);
+                        setDefaultValue(M.T, instance, field.name);
                     }
                 }
             };
 
-            const field_meta = ModelFieldMeta.parse(field.type);
             // todo! include constraints into field meta
-            self.addField(field.name, field_meta, @ptrCast(&holder.setField));
+            const field_meta = self.addField(field.name, @ptrCast(&holder.setField));
+            field_meta.parseInto(field.type);
+
+            const constraints = M._getConstraints();
+            if (@hasField(@TypeOf(constraints), field.name)) {
+                field_meta.applyConstraints(M, @field(constraints, field.name));
+            }
         }
+    }
+
+    pub inline fn addUniqueKey(self: *ModelMeta, compound: []const []const u8) void {
+        model_meta_add_unique_key(self, &compound);
     }
 };
 
@@ -119,6 +129,34 @@ const ModelFieldType = enum(u8) {
     }
 };
 
+pub const LinkPolicy = enum(u8) {
+    /// Link will be used just as key
+    none,
+    /// Service.user_id --> User: operation on User will be restricted if Service exist
+    restrict,
+    /// Service.user_id --> User: operation on User will cause some operation on Service
+    cascade,
+    /// Service.user_id --> User: operation on User will set Service.user_id to null
+    set_null,
+};
+
+pub const Link = struct {
+    model: type,
+    delete: LinkPolicy = .none,
+    update: LinkPolicy = .none,
+};
+
+pub const Self = opaque {};
+
+pub const sql = struct {
+    pub const PrimaryKey = struct {};
+    pub const Length = struct { u32 };
+};
+
+extern "C" fn model_field_meta_add_length(field_meta: *ModelFieldMeta, value: u32) callconv(.c) void;
+extern "C" fn model_field_meta_add_primary_key(field_meta: *ModelFieldMeta) callconv(.c) void;
+extern "C" fn model_field_meta_add_link(field_meta: *ModelFieldMeta, dst_collection: c_str, dst_column: c_str, delete: LinkPolicy, update: LinkPolicy) callconv(.c) void;
+
 const ModelFieldMeta = extern struct {
     type_id: ModelFieldType,
     length: usize = 0,
@@ -126,24 +164,22 @@ const ModelFieldMeta = extern struct {
     enum_values: [*]c_str = undefined,
     enum_size: usize = 0,
 
-    pub fn parse(comptime T: type) ModelFieldMeta {
+    pub fn parseInto(self: *ModelFieldMeta, comptime T: type) void {
         const type_id = comptime ModelFieldType.from(T);
         if (type_id != .Unknown) {
-            return .{ .type_id = type_id };
+            self.type_id = type_id;
+            return;
         }
 
         const info = @typeInfo(T);
         switch (info) {
             .optional => |opt_info| {
-                var result = parse(opt_info.child);
-                result.optional = true;
-                return result;
+                self.parseInto(opt_info.child);
+                self.optional = true;
             },
             .array => |array_info| {
-                return .{
-                    .type_id = comptime ModelFieldType.from(array_info.child),
-                    .length = array_info.len,
-                };
+                self.type_id = comptime ModelFieldType.from(array_info.child);
+                self.length = array_info.len;
             },
             .@"enum" => |enum_info| {
                 var values = common.ra.alloc(c_str, enum_info.fields.len) catch {
@@ -155,16 +191,44 @@ const ModelFieldMeta = extern struct {
                     values[i] = enum_info.fields[i].name;
                 }
 
-                return .{
-                    .type_id = .Enum,
-                    .enum_values = values.ptr,
-                    .enum_size = values.len,
-                    .length = @sizeOf(T),
-                };
+                self.type_id = .Enum;
+                self.enum_values = values.ptr;
+                self.enum_size = values.len;
+                self.length = @sizeOf(T);
             },
             else => {
                 @compileError("Unsupported model field type: " ++ @typeName(T));
             },
+        }
+    }
+
+    pub fn applyConstraints(self: *ModelFieldMeta, comptime M: type, comptime constraints: anytype) void {
+        inline for (constraints) |constraint| {
+            switch (@TypeOf(constraint)) {
+                type => {
+                    if (constraint == sql.PrimaryKey) {
+                        model_field_meta_add_primary_key(self);
+                        continue;
+                    } else {
+                        @compileError("Unknown constraint type mark: " ++ @typeName(constraint));
+                    }
+                },
+                Link => {
+                    const dst_model = if (constraint.model == Self) M else constraint.model;
+
+                    if (comptime dst_model._findPrimaryKey()) |dst_column| {
+                        model_field_meta_add_link(self, dst_model._name, dst_column, constraint.delete, constraint.update);
+                    } else {
+                        @compileError("Failed to find primary key for " ++ dst_model._name);
+                    }
+                },
+                sql.Length => {
+                    model_field_meta_add_length(self, constraint.@"0");
+                },
+                else => {
+                    @compileError("Unknown constraint structure: " ++ @typeName(@TypeOf(constraint)));
+                },
+            }
         }
     }
 };

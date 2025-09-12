@@ -3,10 +3,10 @@ const c_str = common.c_str;
 
 const Json = @import("../json.zig").Json;
 
-extern "C" fn validation_error_new(message: c_str) callconv(.C) *ValidationError;
-extern "C" fn validation_error_prepend_path(err: *ValidationError, parent_key: c_str) callconv(.C) void;
-extern "C" fn validation_error_into_json(err: *ValidationError) callconv(.C) *Json;
-extern "C" fn validation_error_drop(err: *ValidationError) callconv(.C) void;
+extern "C" fn validation_error_new(message: c_str) callconv(.c) *ValidationError;
+extern "C" fn validation_error_prepend_path(err: *ValidationError, parent_key: c_str) callconv(.c) void;
+extern "C" fn validation_error_into_json(err: *ValidationError) callconv(.c) *Json;
+extern "C" fn validation_error_drop(err: *ValidationError) callconv(.c) void;
 
 pub const ValidationError = opaque {
     pub inline fn init(message: c_str) *ValidationError {

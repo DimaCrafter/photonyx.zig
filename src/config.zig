@@ -3,8 +3,8 @@ const c_str = common.c_str;
 
 const Json = @import("./json.zig").Json;
 
-extern "C" fn get_config() callconv(.C) *const Config;
-extern "C" fn config_get_path(config: *const Config, path: c_str) callconv(.C) *const Json;
+extern "C" fn get_config() callconv(.c) *const Config;
+extern "C" fn config_get_path(config: *const Config, path: c_str) callconv(.c) *const Json;
 
 pub const Config = opaque {
     pub inline fn borrow() *const Config {

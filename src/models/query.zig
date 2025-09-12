@@ -6,12 +6,12 @@ const common = @import("../common.zig");
 const EntityList = common.EntityList;
 const AnyEntityList = common.AnyEntityList;
 
-extern "C" fn db_connection_new_query(conn: *const DatabaseConnection, model: *const ModelMeta) callconv(.C) *anyopaque;
-extern "C" fn query_builder_select(query: *anyopaque, projection: *const []const []const u8) callconv(.C) void;
-extern "C" fn query_builder_where(query: *anyopaque, conditions: *const Json) callconv(.C) void;
-extern "C" fn query_builder_debug(query: *anyopaque) callconv(.C) void;
-extern "C" fn db_connection_exec_first(conn: *const DatabaseConnection, model: *const ModelMeta, query: *anyopaque) callconv(.C) ?*anyopaque;
-extern "C" fn db_connection_exec_all(conn: *const DatabaseConnection, model: *const ModelMeta, query: *anyopaque) callconv(.C) *AnyEntityList;
+extern "C" fn db_connection_new_query(conn: *const DatabaseConnection, model: *const ModelMeta) callconv(.c) *anyopaque;
+extern "C" fn query_builder_select(query: *anyopaque, projection: *const []const []const u8) callconv(.c) void;
+extern "C" fn query_builder_where(query: *anyopaque, conditions: *const Json) callconv(.c) void;
+extern "C" fn query_builder_debug(query: *anyopaque) callconv(.c) void;
+extern "C" fn db_connection_exec_first(conn: *const DatabaseConnection, model: *const ModelMeta, query: *anyopaque) callconv(.c) ?*anyopaque;
+extern "C" fn db_connection_exec_all(conn: *const DatabaseConnection, model: *const ModelMeta, query: *anyopaque) callconv(.c) *AnyEntityList;
 
 pub fn QueryBuilder(comptime T: type) type {
     return struct {
