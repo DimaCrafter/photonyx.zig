@@ -30,18 +30,5 @@ pub fn ValidationResult(comptime T: type) type {
     return union(enum) {
         err: *ValidationError,
         ok: T,
-
-        pub fn intoError(self: @This()) ?*ValidationError {
-            switch (self) {
-                .err => |err| return err,
-                .ok => return null,
-            }
-        }
-
-        pub fn deinit(self: @This()) void {
-            if (self.err) |err| {
-                err.deinit();
-            }
-        }
     };
 }

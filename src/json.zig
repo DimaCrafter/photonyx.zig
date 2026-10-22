@@ -36,15 +36,15 @@ pub const Json = opaque {
     }
 
     pub inline fn as_enum(self: *const Json, comptime E: type) !E {
-        const options = @typeInfo(E).@"enum".fields;
+        const enum_meta = @typeInfo(E).@"enum";
 
         const value = self.as_str() orelse {
             return error.InvalidType;
         };
 
-        inline for (options) |option| {
-            if (std.mem.eql(u8, option.name, value[0..std.mem.len(value)])) {
-                return @field(E, option.name);
+        inline for (enum_meta.field_names) |name| {
+            if (std.mem.eql(u8, name, value[0..std.mem.len(value)])) {
+                return @field(E, name);
             }
         }
 
@@ -107,18 +107,18 @@ pub const Json = opaque {
             .float, .comptime_float => {
                 return init_number(@as(f64, @floatCast(value)));
             },
-            .@"struct" => |structInfo| {
-                if (structInfo.is_tuple) {
+            .@"struct" => |struct_meta| {
+                if (struct_meta.is_tuple) {
                     var list = init_array();
-                    inline for (structInfo.fields) |field| {
-                        _ = list.push(from(@field(value, field.name)));
+                    inline for (struct_meta.field_names) |field_name| {
+                        _ = list.push(from(@field(value, field_name)));
                     }
 
                     return list;
                 } else {
                     var obj = init_object();
-                    inline for (structInfo.fields) |field| {
-                        _ = obj.set(field.name, from(@field(value, field.name)));
+                    inline for (struct_meta.field_names) |field_name| {
+                        _ = obj.set(field_name, from(@field(value, field_name)));
                     }
 
                     return obj;
@@ -150,7 +150,7 @@ pub const Json = opaque {
                         }
                     } else {
                         if (ptrInfo.child == u8) {
-                            const tmp = common.ra.dupeZ(u8, value) catch {
+                            const tmp = common.ra.dupeSentinel(u8, value, 0) catch {
                                 // todo! remove this when c_str will be replaced with slice
                                 return init_null();
                             };

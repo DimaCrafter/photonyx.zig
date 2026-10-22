@@ -6,7 +6,8 @@ const common = @import("../common.zig");
 const c_str = common.c_str;
 
 extern "C" fn find_db_connection(id: c_str) ?*DatabaseConnection;
-extern "C" fn db_connection_count(conn: *DatabaseConnection, query: *const Json) u32;
+extern "C" fn db_connection_count(conn: *DatabaseConnection, model: *ModelMeta, query: *const Json) u32;
+extern "C" fn db_connection_exists(conn: *DatabaseConnection, model: *ModelMeta, query: *const Json) bool;
 extern "C" fn db_connection_prepare_model(conn: *DatabaseConnection, name: c_str, init: entity.InitFn(void), deinit: entity.DeinitFn(void)) callconv(.c) *ModelMeta;
 extern "C" fn db_connection_auto_migrate(conn: *DatabaseConnection, model: *ModelMeta) callconv(.c) void;
 
@@ -23,7 +24,11 @@ pub const DatabaseConnection = opaque {
         db_connection_auto_migrate(self, model);
     }
 
-    pub inline fn count(self: *DatabaseConnection, query: *const Json) u32 {
-        return db_connection_count(self, query);
+    pub inline fn count(self: *DatabaseConnection, model: *ModelMeta, query: *const Json) u32 {
+        return db_connection_count(self, model, query);
+    }
+
+    pub inline fn exists(self: *DatabaseConnection, model: *ModelMeta, query: *const Json) bool {
+        return db_connection_exists(self, model, query);
     }
 };

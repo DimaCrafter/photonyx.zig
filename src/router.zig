@@ -22,6 +22,9 @@ pub const Router = opaque {
     pub inline fn register(self: *Router, pattern: c_str, action: ActionHandler) void {
         const handler = struct {
             fn call(ctx: *HttpContext) callconv(.c) ?*Response {
+                const meta = ctx.getMeta();
+                defer meta.deinit();
+
                 action(ctx) catch |err| {
                     if (err == error.ValidationError) {
                         return null;

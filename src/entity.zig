@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const validator = @import("./validator/index.zig");
+
 const common = @import("./common.zig");
 const c_str = common.c_str;
 const Slice = common.Slice;
@@ -10,19 +12,38 @@ const Session = @import("./session.zig").Session;
 
 extern "C" fn http_context_set_response(ctx: *HttpContext, res: *Response) callconv(.c) void;
 extern "C" fn http_context_get_body_ref(ctx: *const HttpContext) callconv(.c) Slice(u8);
+extern "C" fn http_context_get_meta_ref(ctx: *const HttpContext) callconv(.c) ?*HttpContextMeta;
+extern "C" fn http_context_set_meta_ref(ctx: *HttpContext, ptr: ?*HttpContextMeta) callconv(.c) void;
 extern "C" fn http_context_get_request(ctx: *HttpContext) callconv(.c) *Request;
 extern "C" fn http_context_get_response(ctx: *HttpContext) callconv(.c) *Response;
 extern "C" fn http_context_get_session(ctx: *HttpContext) callconv(.c) *Session;
 
 pub const HttpContext = opaque {
+    pub fn getMeta(self: *HttpContext) *HttpContextMeta {
+        if (http_context_get_meta_ref(self)) |meta| {
+            return meta;
+        }
+
+        const meta = common.ra.create(HttpContextMeta) catch |err| {
+            // todo: report out of memory and exit
+            std.debug.print("Out of memory ({})", .{err});
+            std.process.exit(0xFF);
+        };
+
+        meta.* = HttpContextMeta{};
+        http_context_set_meta_ref(self, meta);
+
+        return meta;
+    }
+
     pub inline fn getBodyRef(self: *const HttpContext) []const u8 {
         return http_context_get_body_ref(self).intoNative();
     }
 
-    pub fn validate(self: *HttpContext, comptime V: type) !std.json.Parsed(V.Raw) {
+    pub fn validate(self: *HttpContext, comptime T: type) !T {
         const raw = self.getBodyRef();
 
-        switch (V.validateRawJson(raw, .{})) {
+        switch (validator.parseJson(T, raw)) {
             .err => |err| {
                 const json = err.intoJson();
                 defer json.deinit();
@@ -31,7 +52,10 @@ pub const HttpContext = opaque {
                 return error.ValidationError;
             },
             .ok => |parsed| {
-                return parsed;
+                const meta = self.getMeta();
+                meta.parsedBodyArena = parsed.arena;
+
+                return parsed.value;
             },
         }
     }
@@ -74,6 +98,21 @@ pub const HttpContext = opaque {
         } else {
             res.setCode(HttpCode.OK);
         }
+    }
+};
+
+const HttpContextMeta = struct {
+    parsedBodyArena: ?*std.heap.ArenaAllocator = null,
+
+    pub fn deinit(self: *HttpContextMeta) void {
+        // ref: json.Parsed(T)
+        if (self.parsedBodyArena) |arena| {
+            const allocator = arena.child_allocator;
+            arena.deinit();
+            allocator.destroy(arena);
+        }
+
+        common.ra.destroy(self);
     }
 };
 
