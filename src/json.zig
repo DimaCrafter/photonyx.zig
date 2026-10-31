@@ -169,6 +169,13 @@ pub const Json = opaque {
             .enum_literal => {
                 return from(@tagName(value));
             },
+            .optional => {
+                if (value) |inner| {
+                    return from(inner);
+                } else {
+                    return init_null();
+                }
+            },
             else => {
                 if (value == null) {
                     return init_null();
