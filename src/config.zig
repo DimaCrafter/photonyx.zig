@@ -1,3 +1,4 @@
+const std = @import("std");
 const common = @import("./common.zig");
 const c_str = common.c_str;
 
@@ -14,5 +15,17 @@ pub const Config = opaque {
     /// Returned value is owned by Photonyx
     pub inline fn getPath(self: *const Config, path: c_str) *const Json {
         return config_get_path(self, path);
+    }
+
+    pub fn parse(self: *const Config, comptime T: type, path: c_str) !T {
+        const raw = self.getPath(path).dump();
+        defer common.strDeinit(raw);
+
+        const parsed = try std.json.parseFromSlice(T, common.ra, raw[0..std.mem.len(raw)], .{
+            .ignore_unknown_fields = true,
+            .allocate = .alloc_always,
+        });
+
+        return parsed.value;
     }
 };

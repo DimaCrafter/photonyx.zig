@@ -26,7 +26,7 @@ pub const Router = opaque {
                 defer meta.deinit();
 
                 action(ctx) catch |err| {
-                    if (err == error.ValidationError) {
+                    if (err == error.ValidationError or err == error.ClientGone) {
                         return null;
                     }
 
