@@ -109,11 +109,11 @@ pub fn Shared(comptime T: type) type {
         value: T,
         owned: bool,
 
-        pub fn from_borrowed(value: T) Self {
+        pub fn fromBorrowed(value: T) Self {
             return .{ .value = value, .owned = false };
         }
 
-        pub fn from_owned(value: T) Self {
+        pub fn fromOwned(value: T) Self {
             return .{ .value = value, .owned = true };
         }
 

@@ -1,5 +1,5 @@
 /// Returns comptime type name without namespace and number. Generics are not supported.
-pub fn getSimpleTypeName(comptime T: type) [:0]const u8 {
+pub fn simpleTypeName(comptime T: type) [:0]const u8 {
     comptime {
         const full: [:0]const u8 = @typeName(T);
 

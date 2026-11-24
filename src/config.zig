@@ -13,12 +13,12 @@ pub const Config = opaque {
     }
 
     /// Returned value is owned by Photonyx
-    pub inline fn getPath(self: *const Config, path: c_str) *const Json {
+    pub inline fn get(self: *const Config, path: c_str) *const Json {
         return config_get_path(self, path);
     }
 
     pub fn parse(self: *const Config, comptime T: type, path: c_str) !T {
-        const raw = self.getPath(path).dump();
+        const raw = self.get(path).dump();
         defer common.strDeinit(raw);
 
         const parsed = try std.json.parseFromSlice(T, common.ra, raw[0..std.mem.len(raw)], .{

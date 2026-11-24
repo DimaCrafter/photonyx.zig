@@ -22,7 +22,7 @@ pub const Router = opaque {
     pub inline fn register(self: *Router, pattern: c_str, action: ActionHandler) void {
         const handler = struct {
             fn call(ctx: *HttpContext) callconv(.c) ?*Response {
-                const meta = ctx.getMeta();
+                const meta = ctx.meta();
                 defer meta.deinit();
 
                 action(ctx) catch |err| {
@@ -31,7 +31,7 @@ pub const Router = opaque {
                     }
 
                     ctx.send(.{
-                        .code = HttpCode.InternalServerError,
+                        .code = HttpCode.internal_server_error,
                         .json = .{ .type = "InternalError" },
                     });
                 };
@@ -49,12 +49,12 @@ pub const Router = opaque {
                 return middleware(ctx) catch |err| {
                     if (err != error.ValidationError) {
                         ctx.send(.{
-                            .code = HttpCode.InternalServerError,
+                            .code = HttpCode.internal_server_error,
                             .json = .{ .type = "InternalError" },
                         });
                     }
 
-                    return .Stop;
+                    return .stop;
                 };
             }
         };
@@ -65,7 +65,7 @@ pub const Router = opaque {
 
 pub const MiddlewareResult = enum(u8) {
     /// Continue execution of middleware chain
-    Continue,
+    next,
     /// Stop execution of middleware chain and call the action handler
-    Stop,
+    stop,
 };

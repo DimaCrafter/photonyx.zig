@@ -4,7 +4,7 @@ extern fn datetime_from_micros(timestamp: i64) callconv(.c) *DateTime;
 extern fn datetime_deinit(value: *DateTime) callconv(.c) void;
 
 pub const DateTime = opaque {
-    pub inline fn from_micros(timestamp: i64) *DateTime {
+    pub inline fn fromMicros(timestamp: i64) *DateTime {
         return datetime_from_micros(timestamp);
     }
 
@@ -13,4 +13,4 @@ pub const DateTime = opaque {
     }
 };
 
-pub const CURRENT_DATE: *DateTime = @ptrFromInt(std.math.maxInt(usize));
+pub const current_date: *DateTime = @ptrFromInt(std.math.maxInt(usize));

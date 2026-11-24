@@ -56,18 +56,18 @@ fn freeValue(comptime F: type, value: F) void {
     }
 }
 
-pub fn get_setters(comptime T: type) [@typeInfo(T).@"struct".field_names.len]SetterFn {
+pub fn setters(comptime T: type) [@typeInfo(T).@"struct".field_names.len]SetterFn {
     const struct_meta = @typeInfo(T).@"struct";
     var result: [struct_meta.field_names.len]SetterFn = undefined;
 
     inline for (0..struct_meta.field_names.len) |i| {
-        result[i] = get_setter(T, i);
+        result[i] = setter(T, i);
     }
 
     return result;
 }
 
-fn get_setter(comptime T: type, comptime index: usize) SetterFn {
+fn setter(comptime T: type, comptime index: usize) SetterFn {
     const struct_meta = @typeInfo(T).@"struct";
     const name = struct_meta.field_names[index];
     const F = struct_meta.field_types[index];
@@ -132,7 +132,7 @@ fn defaultValue(comptime F: type, comptime attrs: std.lang.Type.Struct.FieldAttr
     return switch (F) {
         []const u8 => dupeString(""),
         bool => false,
-        *datetime.DateTime => datetime.DateTime.from_micros(0),
+        *datetime.DateTime => datetime.DateTime.fromMicros(0),
         else => switch (@typeInfo(F)) {
             .optional => null,
             .int, .float => 0,

@@ -13,15 +13,16 @@ pub fn splitOnce(comptime T: type, str: []const T, sep: T) ?struct { []const T, 
     return null;
 }
 
+/// The result is allocated with `p.ra`
 pub fn decodeBase64(input: []const u8) !std.ArrayList(u8) {
-    var result = std.ArrayList(u8).init(common.ra);
-    errdefer result.deinit();
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(common.ra);
 
-    try result.resize(try std.base64.standard.Decoder.calcSizeForSlice(input));
+    try result.resize(common.ra, try std.base64.standard.Decoder.calcSizeForSlice(input));
     try std.base64.standard.Decoder.decode(result.items, input);
     return result;
 }
 
-pub inline fn checkAccessLevel(required: anytype, given: @TypeOf(required)) bool {
+pub inline fn hasAccessLevel(required: anytype, given: @TypeOf(required)) bool {
     return @intFromEnum(given) >= @intFromEnum(required);
 }

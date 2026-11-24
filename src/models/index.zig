@@ -14,7 +14,7 @@ const c_str = common.c_str;
 
 const datetime = @import("../datetime.zig");
 pub const DateTime = datetime.DateTime;
-pub const CURRENT_DATE = datetime.CURRENT_DATE;
+pub const current_date = datetime.current_date;
 
 extern "C" fn datetime_to_string(value: *const DateTime) callconv(.c) c_str;
 
@@ -68,7 +68,7 @@ pub fn Cond(comptime T: type) type {
             return .{ .op = .contains, .value = undefined, .values = &.{}, .text = text };
         }
 
-        pub fn is_null(flag: bool) Self {
+        pub fn isNull(flag: bool) Self {
             return .{ .op = if (flag) .is_null else .not_null, .value = undefined, .values = &.{}, .text = "" };
         }
     };
@@ -150,7 +150,7 @@ pub fn Table(comptime T: type, comptime W: type, comptime F: type, comptime opti
         pub const deinitEntity = entity.deinitEntity(T);
 
         pub fn attach() void {
-            const setters = comptime entity.get_setters(T);
+            const setters = comptime entity.setters(T);
             handle = ModelHandle.attach(options.db, options.model, T, entity.initEntity(T), entity.deinitEntity(T), &setters) orelse {
                 // the reason is logged by photonyx
                 std.process.exit(0xFE);
@@ -200,7 +200,7 @@ pub fn Table(comptime T: type, comptime W: type, comptime F: type, comptime opti
         }
 
         fn conditionsJson(conditions: W) *Json {
-            const obj = Json.init_object();
+            const obj = Json.initObject();
             const where_meta = @typeInfo(W).@"struct";
 
             inline for (where_meta.field_names, 0..) |field_name, i| {
@@ -227,9 +227,9 @@ fn condJson(comptime V: type, cond: Cond(V), comptime column: Column) *Json {
     };
 
     const value = switch (cond.op) {
-        .is_null, .not_null => Json.init_null(),
+        .is_null, .not_null => Json.initNull(),
         .in => blk: {
-            const list = Json.init_array();
+            const list = Json.initArray();
             for (cond.values) |item| {
                 _ = list.push(valueJson(@TypeOf(item), item, column));
             }
@@ -241,7 +241,7 @@ fn condJson(comptime V: type, cond: Cond(V), comptime column: Column) *Json {
     };
 
     if (op_key) |key| {
-        const obj = Json.init_object();
+        const obj = Json.initObject();
         _ = obj.set(key, value);
         return obj;
     }
@@ -256,12 +256,12 @@ fn valueJson(comptime V: type, value: V, comptime column: Column) *Json {
                 return valueJson(@TypeOf(inner), inner, column);
             }
 
-            return Json.init_null();
+            return Json.initNull();
         },
         .@"enum" => {
             const ordinal = @backingInt(value);
             if (column.enum_int) |ints| {
-                return Json.init_number(@floatFromInt(ints[ordinal]));
+                return Json.initNumber(@floatFromInt(ints[ordinal]));
             }
 
             if (column.enum_db) |names| {
@@ -277,7 +277,7 @@ fn valueJson(comptime V: type, value: V, comptime column: Column) *Json {
         const raw = datetime_to_string(value);
         defer common.strDeinit(raw);
 
-        return Json.init_str(raw);
+        return Json.initStr(raw);
     }
 
     return Json.from(value);

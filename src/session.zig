@@ -10,7 +10,7 @@ pub const Session = opaque {
     }
 
     pub inline fn set(self: *Session, key: c_str, value: anytype) void {
-        var value_json = Json.from_or_ref(value);
+        var value_json = Json.fromOrRef(value);
         _ = session_get_data(self).set(key, value_json.move());
     }
 

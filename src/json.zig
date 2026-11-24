@@ -23,7 +23,7 @@ extern "C" fn json_new_str(value: c_str) callconv(.c) *Json;
 extern "C" fn json_drop(value: *Json) callconv(.c) void;
 
 pub const Json = opaque {
-    pub inline fn init_object() *Json {
+    pub inline fn initObject() *Json {
         return json_new_object();
     }
 
@@ -31,14 +31,14 @@ pub const Json = opaque {
         return json_get(self, key);
     }
 
-    pub inline fn as_str(self: *const Json) ?c_str {
+    pub inline fn asStr(self: *const Json) ?c_str {
         return json_as_str(self);
     }
 
-    pub inline fn as_enum(self: *const Json, comptime E: type) !E {
+    pub inline fn asEnum(self: *const Json, comptime E: type) !E {
         const enum_meta = @typeInfo(E).@"enum";
 
-        const value = self.as_str() orelse {
+        const value = self.asStr() orelse {
             return error.InvalidType;
         };
 
@@ -60,11 +60,11 @@ pub const Json = opaque {
         return json_dump(self);
     }
 
-    pub inline fn dump_pretty(self: *const Json, ident: u16) c_str {
+    pub inline fn dumpPretty(self: *const Json, ident: u16) c_str {
         return json_dump_pretty(self, ident);
     }
 
-    pub fn init_array() *Json {
+    pub fn initArray() *Json {
         return json_new_array();
     }
 
@@ -73,19 +73,19 @@ pub const Json = opaque {
         return json_push(self, value);
     }
 
-    pub fn init_null() *Json {
+    pub fn initNull() *Json {
         return json_new_null();
     }
 
-    pub fn init_number(value: f64) *Json {
+    pub fn initNumber(value: f64) *Json {
         return json_new_number(value);
     }
 
-    pub fn init_bool(value: bool) *Json {
+    pub fn initBool(value: bool) *Json {
         return json_new_bool(value);
     }
 
-    pub fn init_str(value: c_str) *Json {
+    pub fn initStr(value: c_str) *Json {
         return json_new_str(value);
     }
 
@@ -99,24 +99,24 @@ pub const Json = opaque {
         const info = @typeInfo(T);
         switch (info) {
             .bool => {
-                return init_bool(value);
+                return initBool(value);
             },
             .int, .comptime_int => {
-                return init_number(@as(f64, @floatFromInt(value)));
+                return initNumber(@as(f64, @floatFromInt(value)));
             },
             .float, .comptime_float => {
-                return init_number(@as(f64, @floatCast(value)));
+                return initNumber(@as(f64, @floatCast(value)));
             },
             .@"struct" => |struct_meta| {
                 if (struct_meta.is_tuple) {
-                    var list = init_array();
+                    var list = initArray();
                     inline for (struct_meta.field_names) |field_name| {
                         _ = list.push(from(@field(value, field_name)));
                     }
 
                     return list;
                 } else {
-                    var obj = init_object();
+                    var obj = initObject();
                     inline for (struct_meta.field_names) |field_name| {
                         _ = obj.set(field_name, from(@field(value, field_name)));
                     }
@@ -126,10 +126,10 @@ pub const Json = opaque {
             },
             .array => |arrayInfo| {
                 if (arrayInfo.sentinel().? == 0 and arrayInfo.child == u8) {
-                    return init_str(&value);
+                    return initStr(&value);
                 }
 
-                var list = init_array();
+                var list = initArray();
                 inline for (0..arrayInfo.len) |i| {
                     _ = list.push(from(value[i]));
                 }
@@ -146,17 +146,17 @@ pub const Json = opaque {
                 } else if (ptrInfo.size == .slice) {
                     if (ptrInfo.sentinel()) |sentinel| {
                         if (sentinel == 0 and ptrInfo.child == u8) {
-                            return init_str(value);
+                            return initStr(value);
                         }
                     } else {
                         if (ptrInfo.child == u8) {
                             const tmp = common.ra.dupeSentinel(u8, value, 0) catch {
                                 // todo! remove this when c_str will be replaced with slice
-                                return init_null();
+                                return initNull();
                             };
                             defer common.ra.free(tmp);
 
-                            return init_str(tmp);
+                            return initStr(tmp);
                         }
                     }
                 }
@@ -173,12 +173,12 @@ pub const Json = opaque {
                 if (value) |inner| {
                     return from(inner);
                 } else {
-                    return init_null();
+                    return initNull();
                 }
             },
             else => {
                 if (value == null) {
-                    return init_null();
+                    return initNull();
                 } else {
                     @compileError("Unable to interpret '" ++ @typeName(T) ++ "' as a JSON value");
                 }
@@ -187,12 +187,12 @@ pub const Json = opaque {
     }
 
     /// Creates new owned `Json` instance for `anytype` or reference for `*Json`
-    pub fn from_or_ref(jsonLike: anytype) Shared(*Json) {
-        if (@TypeOf(jsonLike) == *Json) {
-            return Shared(*Json).from_borrowed(jsonLike);
+    pub fn fromOrRef(json_like: anytype) Shared(*Json) {
+        if (@TypeOf(json_like) == *Json) {
+            return Shared(*Json).fromBorrowed(json_like);
         } else {
-            const json = Json.from(jsonLike);
-            return Shared(*Json).from_owned(json);
+            const json = Json.from(json_like);
+            return Shared(*Json).fromOwned(json);
         }
     }
 };

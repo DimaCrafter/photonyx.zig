@@ -19,55 +19,63 @@ extern "C" fn http_context_get_request(ctx: *HttpContext) callconv(.c) *Request;
 extern "C" fn http_context_get_response(ctx: *HttpContext) callconv(.c) *Response;
 extern "C" fn http_context_get_session(ctx: *HttpContext) callconv(.c) *Session;
 extern "C" fn http_context_get_address(ctx: *HttpContext) callconv(.c) Slice(u8);
+extern "C" fn http_context_get_peer_address(ctx: *HttpContext) callconv(.c) Slice(u8);
+extern "C" fn http_context_get_ip(ctx: *const HttpContext) callconv(.c) CIpAddress;
 extern "C" fn http_context_get_method(ctx: *const HttpContext) callconv(.c) HttpMethod;
 extern "C" fn http_context_stream_begin(ctx: *HttpContext) callconv(.c) bool;
 extern "C" fn http_context_stream_write(ctx: *HttpContext, ptr: [*]const u8, size: usize) callconv(.c) bool;
 
 pub const HttpMethod = enum(u8) { GET, POST, OPTIONS };
 
+const CIpAddress = extern struct {
+    /// 4 or 6
+    family: u8,
+    /// IPv4 address takes the first 4 bytes
+    bytes: [16]u8,
+};
+
 pub const HttpContext = opaque {
-    pub fn getMeta(self: *HttpContext) *HttpContextMeta {
-        if (http_context_get_meta_ref(self)) |meta| {
-            return meta;
+    pub fn meta(self: *HttpContext) *HttpContextMeta {
+        if (http_context_get_meta_ref(self)) |existing| {
+            return existing;
         }
 
-        const meta = common.ra.create(HttpContextMeta) catch |err| {
+        const created = common.ra.create(HttpContextMeta) catch |err| {
             // todo: report out of memory and exit
             std.debug.print("Out of memory ({})", .{err});
             std.process.exit(0xFF);
         };
 
-        meta.* = HttpContextMeta{};
-        http_context_set_meta_ref(self, meta);
+        created.* = HttpContextMeta{};
+        http_context_set_meta_ref(self, created);
 
-        return meta;
+        return created;
     }
 
-    pub inline fn getBodyRef(self: *const HttpContext) []const u8 {
+    pub inline fn body(self: *const HttpContext) []const u8 {
         return http_context_get_body_ref(self).intoNative();
     }
 
     pub fn validate(self: *HttpContext, comptime T: type) !T {
-        const raw = self.getBodyRef();
+        const raw = self.body();
 
         switch (validator.parseJson(T, raw)) {
             .err => |err| {
                 const json = err.intoJson();
                 defer json.deinit();
 
-                self.send(.{ .code = HttpCode.BadRequest, .json = json });
+                self.send(.{ .code = HttpCode.bad_request, .json = json });
                 return error.ValidationError;
             },
             .ok => |parsed| {
-                const meta = self.getMeta();
-                meta.parsedBodyArena = parsed.arena;
+                self.meta().parsed_body_arena = parsed.arena;
 
                 return parsed.value;
             },
         }
     }
 
-    pub inline fn getHeader(self: *HttpContext, name: []const u8) ?[]const u8 {
+    pub inline fn header(self: *HttpContext, name: []const u8) ?[]const u8 {
         const req = http_context_get_request(self);
         return req.headers().get(name);
     }
@@ -81,16 +89,32 @@ pub const HttpContext = opaque {
         return http_context_get_session(self);
     }
 
-    /// Address of the peer in text form, valid until the handler returns
+    /// Address of the client in text form, valid until the handler returns. Behind a proxy
+    /// from `server.trustedProxies` it comes from `X-Forwarded-For`, otherwise it is `peerAddress`.
     pub inline fn address(self: *HttpContext) []const u8 {
         return http_context_get_address(self).intoNative();
+    }
+
+    /// Address of the connection in text form, valid until the handler returns
+    pub inline fn peerAddress(self: *HttpContext) []const u8 {
+        return http_context_get_peer_address(self).intoNative();
+    }
+
+    /// Address of the client, the same as `address`. The port is 0.
+    pub fn ip(self: *const HttpContext) std.Io.net.IpAddress {
+        const raw = http_context_get_ip(self);
+
+        return switch (raw.family) {
+            4 => .{ .ip4 = .{ .bytes = raw.bytes[0..4].*, .port = 0 } },
+            else => .{ .ip6 = .{ .bytes = raw.bytes, .port = 0 } },
+        };
     }
 
     pub inline fn method(self: *const HttpContext) HttpMethod {
         return http_context_get_method(self);
     }
 
-    pub fn stream(self: *HttpContext, code: HttpCode) error{ClientGone}!ResponseStream {
+    pub fn beginStream(self: *HttpContext, code: HttpCode) error{ClientGone}!ResponseStream {
         http_context_get_response(self).setCode(code);
 
         if (!http_context_stream_begin(self)) {
@@ -100,23 +124,23 @@ pub const HttpContext = opaque {
         return .{ .ctx = self };
     }
 
-    pub fn sse(self: *HttpContext) error{ClientGone}!SseStream {
+    pub fn beginSse(self: *HttpContext) error{ClientGone}!SseStream {
         self.setHeader("content-type", "text/event-stream");
         self.setHeader("cache-control", "no-cache");
 
-        return .{ .stream = try self.stream(HttpCode.OK) };
+        return .{ .stream = try self.beginStream(HttpCode.ok) };
     }
 
-    /// - resSchema.code: `HttpCode`
-    /// - resSchema.json: `*Json` or `anytype`
-    /// - resSchema.bytes: `[]const u8`, copied
-    /// - resSchema.raw: `[]const u8`, must be allocated with `p.ra`, Photonyx takes ownership
-    pub fn send(self: *HttpContext, resSchema: anytype) void {
-        const S = @TypeOf(resSchema);
+    /// - response.code: `HttpCode`
+    /// - response.json: `*Json` or `anytype`
+    /// - response.bytes: `[]const u8`, copied
+    /// - response.raw: `[]const u8`, must be allocated with `p.ra`, Photonyx takes ownership
+    pub fn send(self: *HttpContext, response: anytype) void {
+        const S = @TypeOf(response);
         const res = http_context_get_response(self);
 
         if (@hasField(S, "json")) {
-            const json = Json.from_or_ref(@field(resSchema, "json"));
+            const json = Json.fromOrRef(@field(response, "json"));
             defer json.deinit();
 
             const msg = json.borrow().dump();
@@ -127,17 +151,17 @@ pub const HttpContext = opaque {
         }
 
         if (@hasField(S, "bytes")) {
-            res.setPayloadCopy(@field(resSchema, "bytes"));
+            res.setPayloadCopy(@field(response, "bytes"));
         }
 
         if (@hasField(S, "raw")) {
-            res.setPayload(@field(resSchema, "raw"));
+            res.setPayload(@field(response, "raw"));
         }
 
         if (@hasField(S, "code")) {
-            res.setCode(@field(resSchema, "code"));
+            res.setCode(@field(response, "code"));
         } else {
-            res.setCode(HttpCode.OK);
+            res.setCode(HttpCode.ok);
         }
     }
 };
@@ -156,7 +180,7 @@ pub const SseStream = struct {
     stream: ResponseStream,
 
     /// `data` can contain line breaks
-    pub fn event(self: SseStream, name: []const u8, data: []const u8) error{ ClientGone, OutOfMemory }!void {
+    pub fn writeEvent(self: SseStream, name: []const u8, data: []const u8) error{ ClientGone, OutOfMemory }!void {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(common.ra);
 
@@ -165,7 +189,7 @@ pub const SseStream = struct {
     }
 
     /// Clients ignore comments. Send one periodically during silence to notice a gone client
-    pub fn comment(self: SseStream, text: []const u8) error{ ClientGone, OutOfMemory }!void {
+    pub fn writeComment(self: SseStream, text: []const u8) error{ ClientGone, OutOfMemory }!void {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(common.ra);
 
@@ -175,11 +199,11 @@ pub const SseStream = struct {
 };
 
 const HttpContextMeta = struct {
-    parsedBodyArena: ?*std.heap.ArenaAllocator = null,
+    parsed_body_arena: ?*std.heap.ArenaAllocator = null,
 
     pub fn deinit(self: *HttpContextMeta) void {
         // ref: json.Parsed(T)
-        if (self.parsedBodyArena) |arena| {
+        if (self.parsed_body_arena) |arena| {
             const allocator = arena.child_allocator;
             arena.deinit();
             allocator.destroy(arena);
@@ -236,7 +260,7 @@ pub const Response = opaque {
         return response_headers(self);
     }
 
-    pub inline fn setDrop(self: *Response) void {
+    pub inline fn dropReply(self: *Response) void {
         response_set_drop(self);
     }
 
